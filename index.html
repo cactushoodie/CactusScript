@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CactusScript (Video)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #111827;
+            color: #F9FAFB;
+        }
+        .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+        .btn { transition: all 0.2s ease-in-out; }
+        .btn:hover { transform: translateY(-2px); }
+        .loader { border-top-color: #3B82F6; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        textarea, input, select { background-color: #1F2937; border-color: #4B5563; }
+        textarea:focus, input:focus, select:focus { border-color: #3B82F6; --tw-ring-color: #3B82F6; }
+        #dropZone { border-style: dashed; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-white mb-2">CactusScript v2.0</h1>
+            <p class="text-lg text-gray-400">Video Analysis & Script Generation</p>
+        </header>
+
+        <!-- API Key Input -->
+        <div class="mb-6">
+            <label for="apiKey" class="block text-sm font-medium text-gray-300 mb-2">Your Google AI Studio API Key</label>
+            <input type="password" id="apiKey" placeholder="Paste your API key here to activate the app..." class="w-full p-3 rounded-lg border focus:ring-1 focus:outline-none transition">
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <!-- Input Section -->
+            <div>
+                <label class="block text-sm font-medium text-gray-300 mb-2">1. Upload Your Video</label>
+                <div id="dropZone" class="w-full p-6 text-center border-2 border-gray-600 rounded-lg cursor-pointer hover:bg-gray-800 transition">
+                    <p id="dropZoneText" class="text-gray-400">Drag & drop a video file here, or click to select</p>
+                    <input type="file" id="videoUpload" accept="video/*" class="hidden">
+                </div>
+                
+                <div class="mt-4">
+                    <label for="promptInput" class="block text-sm font-medium text-gray-300 mb-2">2. Enter Your Prompt</label>
+                    <textarea id="promptInput" rows="4" class="w-full p-3 rounded-lg border focus:ring-1 focus:outline-none transition" placeholder="e.g., 'Transcribe this video.' or 'Analyze this and rewrite it in my brand voice.'"></textarea>
+                </div>
+                
+                <div class="mt-4">
+                    <label class="block text-sm font-medium text-gray-300 mb-2">3. Choose Script Type</label>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                         <button id="generateVideoBtn" class="btn bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg shadow-lg flex items-center justify-center">
+                            <svg class="loader h-5 w-5 mr-3 hidden" viewBox="0 0 24 24"></svg>
+                            Generate Video Script
+                        </button>
+                        <button id="generateLiveBtn" class="btn bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg shadow-lg flex items-center justify-center">
+                             <svg class="loader h-5 w-5 mr-3 hidden" viewBox="0 0 24 24"></svg>
+                            Generate Live Script
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Output Section -->
+            <div>
+                <label for="generatedOutput" class="block text-sm font-medium text-gray-300 mb-2">Output</label>
+                <div class="relative">
+                    <textarea id="generatedOutput" rows="15" class="w-full p-3 rounded-lg border focus:ring-1 focus:outline-none transition" readonly placeholder="Your analysis and polished script will appear here..."></textarea>
+                    <button id="copyBtn" class="absolute top-2 right-2 bg-gray-600 hover:bg-gray-700 text-white text-xs font-bold py-1 px-2 rounded">Copy</button>
+                </div>
+                 <p id="errorMessage" class="text-red-400 text-sm mt-2 hidden"></p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- DOM Elements ---
+        const apiKeyInput = document.getElementById('apiKey');
+        const dropZone = document.getElementById('dropZone');
+        const dropZoneText = document.getElementById('dropZoneText');
+        const videoUpload = document.getElementById('videoUpload');
+        const promptInput = document.getElementById('promptInput');
+        const generateVideoBtn = document.getElementById('generateVideoBtn');
+        const generateLiveBtn = document.getElementById('generateLiveBtn');
+        const generatedOutput = document.getElementById('generatedOutput');
+        const copyBtn = document.getElementById('copyBtn');
+        const errorMessage = document.getElementById('errorMessage');
+
+        let uploadedFile = null;
+
+        // --- Brand Voice System Prompts ---
+        const videoScriptSystemPrompt = `You are an expert TikTok scriptwriter for the brand 'theFrankoHouse'. The persona is a skilled, generic blue-collar dad who is an expert in tools, tech, and practical family gear. The tone is calm, deliberate, and conversational. The script must be a personal testimony ("This is what I use..."). The hook must be a bold, declarative statement. The CTA must be a helpful suggestion. Banned words: literally, game changer, super, awesome, fantastic, honestly, ultimate, hack, you know the struggle, this is the perfect fix, best part. Rewrite the user's provided video transcript following all these rules.`;
+        const liveScriptSystemPrompt = `You are an expert TikTok LIVE scriptwriter for the brand 'theFrankoHouse'. The persona is a skilled, blue-collar dad. The tone is energetic and interactive. The script must include a hook, a playbook of things to do, and a strong closing. The CTA must create urgency. Banned words: literally, game changer, super, awesome, fantastic, honestly, ultimate, hack, you know the struggle, this is the perfect fix, best part. Generate a live script based on the content of the user's video.`;
+
+        // --- File Handling Logic ---
+        dropZone.addEventListener('click', () => videoUpload.click());
+        videoUpload.addEventListener('change', (e) => handleFile(e.target.files[0]));
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('bg-gray-800', 'border-blue-500');
+        });
+        dropZone.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('bg-gray-800', 'border-blue-500');
+        });
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('bg-gray-800', 'border-blue-500');
+            handleFile(e.dataTransfer.files[0]);
+        });
+
+        function handleFile(file) {
+            if (file && file.type.startsWith('video/')) {
+                uploadedFile = file;
+                dropZoneText.textContent = `File selected: ${file.name}`;
+                dropZone.classList.add('border-green-500');
+            } else {
+                uploadedFile = null;
+                dropZoneText.textContent = 'Invalid file type. Please select a video.';
+                dropZone.classList.add('border-red-500');
+            }
+        }
+
+        // --- API Call Logic ---
+        async function fileToGenerativePart(file) {
+            const base64EncodedDataPromise = new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result.split(',')[1]);
+                reader.readAsDataURL(file);
+            });
+            return {
+                inlineData: { data: await base64EncodedDataPromise, mimeType: file.type },
+            };
+        }
+
+        async function callGeminiAPI(systemPrompt, userPrompt, loaderElement) {
+            const apiKey = apiKeyInput.value;
+            if (!apiKey) {
+                showError("Please enter your Google AI Studio API key.");
+                return;
+            }
+            if (!uploadedFile) {
+                showError("Please upload a video file first.");
+                return;
+            }
+             if (!userPrompt) {
+                showError("Please enter a prompt (e.g., 'Transcribe this').");
+                return;
+            }
+
+            loaderElement.classList.remove('hidden');
+            const allButtons = document.querySelectorAll('.btn');
+            allButtons.forEach(b => b.disabled = true);
+            errorMessage.classList.add('hidden');
+            generatedOutput.value = "Analyzing video and generating...";
+
+            try {
+                const videoPart = await fileToGenerativePart(uploadedFile);
+                const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+
+                const payload = {
+                    contents: [{
+                        parts: [
+                            { text: userPrompt },
+                            videoPart
+                        ]
+                    }],
+                    systemInstruction: {
+                        parts: [{ text: systemPrompt }]
+                    }
+                };
+
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error?.message || `API request failed with status ${response.status}`);
+                }
+
+                const data = await response.json();
+                const script = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                
+                if (script) {
+                    generatedOutput.value = script.trim();
+                } else {
+                     let responseText = "No valid response from API.";
+                    if (data.promptFeedback && data.promptFeedback.blockReason) {
+                        responseText = `Request blocked. Reason: ${data.promptFeedback.blockReason}.`;
+                    }
+                    throw new Error(responseText);
+                }
+
+            } catch (error) {
+                showError(`Error: ${error.message}`);
+                generatedOutput.value = "An error occurred. Please check your API key and input.";
+            } finally {
+                loaderElement.classList.add('hidden');
+                allButtons.forEach(b => b.disabled = false);
+            }
+        }
+
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.classList.remove('hidden');
+        }
+        
+        function getLoaderForButton(button) {
+            return button.querySelector('.loader');
+        }
+
+        // --- Event Listeners ---
+        generateVideoBtn.addEventListener('click', () => {
+            const userInput = promptInput.value;
+            callGeminiAPI(videoScriptSystemPrompt, userInput, getLoaderForButton(generateVideoBtn));
+        });
+
+        generateLiveBtn.addEventListener('click', () => {
+            const userInput = promptInput.value;
+            callGeminiAPI(liveScriptSystemPrompt, userInput, getLoaderForButton(generateLiveBtn));
+        });
+
+        copyBtn.addEventListener('click', () => {
+            generatedOutput.select();
+            document.execCommand('copy');
+            copyBtn.textContent = 'Copied!';
+            setTimeout(() => { copyBtn.textContent = 'Copy'; }, 2000);
+        });
+
+    </script>
+</body>
+</html>
